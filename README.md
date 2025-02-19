@@ -3,7 +3,7 @@
 # LTS FOR DG-DISCRETIZED LINEAR MAXWELLS' EQUATIONS
 This code was used for the numerical experiments in the paper
 
-> LOCAL TIME-STEPPING METHODS FOR FRIEDRICHS' SYSTEMS
+> LOCAL TIME-INTEGRATION FOR FRIEDRICHS' SYSTEMS
 >
 > By M. Hochbruck, M. Scheifinger
 
