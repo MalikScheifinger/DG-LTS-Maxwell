@@ -1,0 +1,2 @@
+add_subdirectory(Assembler3D)
+add_subdirectory(AssemblerTE)
