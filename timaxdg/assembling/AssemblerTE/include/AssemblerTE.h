@@ -187,12 +187,22 @@ class AssemblerTE {
 	  double alpha = 1.);
 
   /**
-   * @brief Assembles the load vector.
+   * @brief Assembles the load vector serial.
    * 
    * @param rhs_function functions that gets assembled
    * @param rhs_vector load vector
    */
   void assemble_rhs(
+	  const dealii::Function<2> &rhs_function,
+	  dealii::BlockVector<double> &rhs_vector);
+
+   /**
+   * @brief Assembles the load vector in parallel.
+   * 
+   * @param rhs_function functions that gets assembled
+   * @param rhs_vector load vector
+   */
+  void assemble_rhs_parallel(
 	  const dealii::Function<2> &rhs_function,
 	  dealii::BlockVector<double> &rhs_vector);
 

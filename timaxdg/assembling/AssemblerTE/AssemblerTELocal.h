@@ -53,6 +53,11 @@ void assemble_boundary_stab(
 	double eps,
 	double mu);
 
+void assemble_rhs_vector_cell(
+	dealii::Vector<double> &cell_vector,
+	const dealii::FEValues<2> &fe_v,
+	unsigned int dofs_per_cell);
+
 // Parallel
 
 struct MassScratchDataTE {
@@ -363,6 +368,55 @@ void stab_cell_worker(
 	const dealii::DoFHandler<2>::active_cell_iterator &cell,
 	StabScratchDataTE &scratch_data,
 	StabCopyDataTE &copy_data);
+
+
+
+
+struct RhsScratchDataTE {
+
+  RhsScratchDataTE(
+	  const dealii::Mapping<2> &mapping,
+	  const dealii::FiniteElement<2> &fe,
+	  const dealii::Quadrature<2> &quadrature,
+	  const dealii::Function<2> &rhs_function,
+	  const dealii::UpdateFlags update_flags =
+		  (dealii::update_values
+		   | dealii::update_quadrature_points
+		   | dealii::update_JxW_values))
+	  : fe_values(mapping, fe, quadrature, update_flags),
+		rhs_function(rhs_function){};
+
+  RhsScratchDataTE(const RhsScratchDataTE &scratch_data)
+	  : fe_values(scratch_data.fe_values.get_mapping(),
+				  scratch_data.fe_values.get_fe(),
+				  scratch_data.fe_values.get_quadrature(),
+				  scratch_data.fe_values.get_update_flags()),
+		rhs_function(scratch_data.rhs_function){};
+
+  dealii::FEValues<2> fe_values;
+  const dealii::Function<2> &rhs_function;
+};
+
+struct RhsCopyDataTE {
+  dealii::Vector<double> cell_vector;
+  std::vector<dealii::types::global_dof_index> local_dof_indices;
+
+  template<class Iterator>
+  void reinit(
+	  const Iterator &cell,
+	  unsigned int dofs_per_cell) {
+
+	cell_vector.reinit(dofs_per_cell);
+
+	local_dof_indices.resize(dofs_per_cell);
+	cell->get_dof_indices(local_dof_indices);
+  }
+};
+
+void rhs_cell_worker(
+	const dealii::DoFHandler<2>::active_cell_iterator &cell,
+	RhsScratchDataTE &scratch_data,
+	RhsCopyDataTE &copy_data);
 
 }// namespace MaxwellProblem::Assembling
 

@@ -391,7 +391,7 @@ double convergence_cavity_1D::time_integration(const double time_step_width, con
   // cut-off unstable values
   if (max_L2_error > 100) max_L2_error = 100;
 
-  out << "  Max L2 Error: " << max_L2_error << "\n";
+  out << "  L2 Error: " << max_L2_error << "\n";
   out << "\n";
 
   return max_L2_error;
@@ -424,21 +424,20 @@ void convergence_cavity_1D::run(const double eta) {
         conv_table.add_value("lfc degree", lfc_degree);
         conv_table.add_value("time step width", step_size);
         conv_table.add_value("inverse time step width", 1. / step_size);
-        conv_table.add_value("max l2 error", time_integration(step_size, lfc_degree, eta));
+        conv_table.add_value("L2 error", time_integration(step_size, lfc_degree, eta));
       }
     }
 
     conv_table.set_precision("time step width", 8);
     conv_table.set_precision("inverse time step width", 8);
-    conv_table.set_precision("max l2 error", 8);
+    conv_table.set_precision("L2 error", 8);
 
-    conv_table.evaluate_convergence_rates("max l2 error", "inverse time step width",dealii::ConvergenceTable::RateMode::reduction_rate_log2, 1);
+    conv_table.evaluate_convergence_rates("L2 error", "inverse time step width",dealii::ConvergenceTable::RateMode::reduction_rate_log2, 1);
     conv_table.write_text(std::cout, dealii::ConvergenceTable::TextOutputFormat::org_mode_table);
 
     #ifdef OUTPUT_TABLE
     std::stringstream ss;
     ss << "errors_cavity_LTS_LFC_eta" << eta;
-
     ss << "_dg" << FE_DEGREE << "_coarse-fine-ratio" << FINE_MESH_FACTOR;
 
     std::string out_str = ss.str();

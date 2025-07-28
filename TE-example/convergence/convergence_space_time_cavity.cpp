@@ -41,45 +41,40 @@
 #include "OutputMatrix.h"
 
 // Setup
-#define GEOMETRY_X 1
-#define GEOMETRY_Y 1
-
-#define START_TIME 0.0
-#define END_TIME 1.0
-
-#define MU 1.0
-#define EPS 1.0
-
-#define FE_DEGREE 5
-#define GLOBAL_REFINEMENTS 3
-#define INNER_REFINEMENTS 3 // must be at least 1 for LI/LTS
-#define GLOBAL_LOCAL_THRESHOLD 1.2
-
-#define ETA 1.0
-
-#define START_TIME_STEP_WIDTH 0.0025
-#define END_TIME_STEP_WIDTH 0.0001
-#define NUMBER_OF_RUNS 40
+namespace Config {
+  constexpr double geometry_x{1};
+  constexpr double geometry_y{1};
+  constexpr double start_time{0.0};
+  constexpr double end_time{1.0};
+  constexpr double mu{1.0};
+  constexpr double eps{1.0};
+  constexpr unsigned int fe_degree{2};
+  constexpr unsigned int start_global_refinements{2};
+  constexpr unsigned int max_global_refinements{9};
+  constexpr unsigned int inner_refinements{2};
+  constexpr double global_local_threshold{1.2};
+  constexpr double eta{1.0};
+  constexpr double start_time_step_width = 0.0025;
+  constexpr std::array<unsigned int, 5> lfc_degrees{{1, 2, 4, 8, 9}};
+}
 
 #define OUTPUT_TABLE
 // #define OUTPUT_MESH
-#define OUTPUT_MATRICES
-
-#define CFLS
+// #define OUTPUT_MATRICES
 
 class convergence_cavity_TE {
  private:
-  const double a_x = GEOMETRY_X;
-  const double a_y = GEOMETRY_Y;
+  const double a_x = Config::geometry_x;
+  const double a_y = Config::geometry_y;
 
-  const double global_local_threshold = GLOBAL_LOCAL_THRESHOLD;
+  const double global_local_threshold = Config::global_local_threshold;
 
-  const double start_time = START_TIME;
-  const double end_time = END_TIME;
+  const double start_time = Config::start_time;
+  const double end_time = Config::end_time;
 
-  const unsigned int degree = FE_DEGREE;
+  const unsigned int degree = Config::fe_degree;
   
-  const double eta = ETA;
+  const double eta = Config::eta;
 
   const std::filesystem::path path;
   std::ostream &out;
@@ -167,7 +162,7 @@ void convergence_cavity_TE::output_matrices(const unsigned int global_ref, const
   std::filesystem::create_directories(out_path);
 
   std::stringstream ss;
-  ss << "_dg" << FE_DEGREE << "_globalref" << global_ref << "_localref" << local_ref << ".dat";
+  ss << "_dg" << degree << "_globalref" << global_ref << "_localref" << local_ref << ".dat";
   std::string data_str = ss.str();
 
   // mass matrix
@@ -242,8 +237,8 @@ convergence_cavity_TE::convergence_cavity_TE(
 							dealii::FESystem<2>(FE_DGQ<2>(degree), 2), 1),
 						 cell_quadrature(degree + 2),
 						 face_quadrature(degree + 1),
-						 mu(MU),
-						 eps(EPS),
+						 mu(Config::mu),
+						 eps(Config::eps),
 						 assembler(
 							 fe,
 							 mapping,
@@ -252,8 +247,8 @@ convergence_cavity_TE::convergence_cavity_TE(
 							 dof_handler,
 							 mu,
 							 eps),
-						 ex_solution(MU, EPS, start_time),
-             rhs(MU, EPS, start_time),
+						 ex_solution(Config::mu, Config::eps, start_time),
+             rhs(Config::mu, Config::eps, start_time),
              computing_timer(out, TimerOutput::never, TimerOutput::cpu_and_wall_times_grouped) {}
 
 void convergence_cavity_TE::setup_triangulation(const unsigned int global_refinements, const unsigned int inner_refinements) {
@@ -292,6 +287,9 @@ void convergence_cavity_TE::setup_triangulation(const unsigned int global_refine
 
   std::ofstream out(out_str);
   dealii::GridOut grid_out;
+  dealii::GridOutFlags::Msh msh_flags;
+  msh_flags.write_faces = true;
+  grid_out.set_flags(msh_flags);
   grid_out.write_msh(triangulation, out);
   #endif
 }
@@ -393,6 +391,7 @@ double convergence_cavity_TE::time_integration(const double time_step_width, con
       integrator.integrate_step(solution, j_current);
     }
   }
+
   double L2_error = compute_error_L2(current_time);
 
   // cut-off unstable values
@@ -405,62 +404,58 @@ double convergence_cavity_TE::time_integration(const double time_step_width, con
 }
 
 void convergence_cavity_TE::run() {
-    computing_timer.reset();
 
+    double time_step_width = Config::start_time_step_width;
     dealii::ConvergenceTable conv_table;
     
-    setup_triangulation(GLOBAL_REFINEMENTS, INNER_REFINEMENTS);
-    setup_system();
-    assemble_system();
-
-    #ifdef OUTPUT_MATRICES
-    output_matrices(GLOBAL_REFINEMENTS, INNER_REFINEMENTS);
-    #endif
-
-    std::vector<unsigned int> lfc_degrees = {1, 2, 4, 8, 9};
-
-    auto time_step_sizes = MaxwellProblem::Tools::log2_spaced(
-      START_TIME_STEP_WIDTH, 
-      END_TIME_STEP_WIDTH, 
-      NUMBER_OF_RUNS);
-
-    #ifdef CFLS
-    // some additional time stepsizes to hit the CFLs
-    std::vector<double> lf_lfc_cfl_time_step_sizes;
-
-    if (ETA == 1.0) {
-      lf_lfc_cfl_time_step_sizes = {0.000471, 0.000933, 0.001862, 0.002094, 0.002018, 0.000266};
-    } else {
-      lf_lfc_cfl_time_step_sizes = {0.002018, 0.000266};
-    }
-
-    time_step_sizes.insert(time_step_sizes.begin(), lf_lfc_cfl_time_step_sizes.begin(), lf_lfc_cfl_time_step_sizes.end());
-
-    std::sort(time_step_sizes.begin(), time_step_sizes.end(), std::greater<double>());
-    #endif
-    
-    for (unsigned int lfc_degree : lfc_degrees) {
+    for (unsigned int lfc_degree : Config::lfc_degrees) {
       out << "LTS-LFC with degree p = " << lfc_degree << "\n\n";
-      for (const auto &step_size : time_step_sizes) {
+
+      for (unsigned int global_ref = Config::start_global_refinements; global_ref <= Config::max_global_refinements; ++global_ref) {
+        computing_timer.reset();
+        
+        setup_triangulation(global_ref, Config::inner_refinements);
+        setup_system();
+        assemble_system();
+
+        #ifdef OUTPUT_MATRICES
+        output_matrices(global_ref, Config::inner_refinements);
+        #endif
+
+        auto max_diam = dealii::GridTools::maximal_cell_diameter(triangulation);
+
+        out << "maximal cell diameter: " << max_diam << "\n";
+        out << "time step width: " << time_step_width << "\n";
+
         conv_table.add_value("lfc degree", lfc_degree);
-        conv_table.add_value("time step width", step_size);
-        conv_table.add_value("inverse time step width", 1. / step_size);
-        conv_table.add_value("L2 error", time_integration(step_size, lfc_degree));
+        conv_table.add_value("max diam", max_diam);
+        conv_table.add_value("inverse max diam", 1. / max_diam);
+        conv_table.add_value("time step width", time_step_width);
+        conv_table.add_value("inverse time step width", 1. / time_step_width);
+        conv_table.add_value("L2 error", time_integration(time_step_width, lfc_degree));
+
+        time_step_width *= 0.5;
+        out << "\n";
+        computing_timer.print_summary();
+        out << "\n";
       }
     }
 
+    conv_table.set_precision("max diam", 8);
+    conv_table.set_precision("inverse max diam", 8);
     conv_table.set_precision("time step width", 8);
     conv_table.set_precision("inverse time step width", 8);
     conv_table.set_precision("L2 error", 8);
 
-    conv_table.evaluate_convergence_rates("L2 error", "inverse time step width",dealii::ConvergenceTable::RateMode::reduction_rate_log2, 1);
+    conv_table.evaluate_convergence_rates("L2 error", "inverse time step width", dealii::ConvergenceTable::RateMode::reduction_rate_log2, 1);
     conv_table.write_text(out, dealii::ConvergenceTable::TextOutputFormat::org_mode_table);
 
     #ifdef OUTPUT_TABLE
     std::stringstream ss;
-    ss << "errors_time_cavity_LTS_LFC_eta" << ETA
-       << "_dg" << FE_DEGREE << "_globalref" << GLOBAL_REFINEMENTS
-       << "_localref" << INNER_REFINEMENTS << "_threshold" << GLOBAL_LOCAL_THRESHOLD;
+    ss << "errors_space_time_cavity_LTS_LFC_eta" << eta
+      << "_dg" << degree
+      << "_localref" << Config::inner_refinements 
+      << "_threshold" << global_local_threshold;
 
     std::string out_str = ss.str();
     std::replace(out_str.begin(), out_str.end(), '.', ',');
@@ -470,9 +465,7 @@ void convergence_cavity_TE::run() {
     conv_table.write_text(out_file, dealii::ConvergenceTable::TextOutputFormat::org_mode_table);
     out_file.close();
     #endif
-
-    computing_timer.print_summary();
-    out << std::endl;
+    std::cout << "\n";
 }
 
 int main() {

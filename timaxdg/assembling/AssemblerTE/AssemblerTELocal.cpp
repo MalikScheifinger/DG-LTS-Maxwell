@@ -263,6 +263,23 @@ void assemble_boundary_stab(
   }
 }
 
+void assemble_rhs_vector_cell(
+	dealii::Vector<double> &cell_vector,
+	std::vector<dealii::Vector<double>> &rhs_values,
+	const dealii::FEValues<2> &fe_v,
+	unsigned int dofs_per_cell) {	
+
+	const std::vector<double> &weights = fe_v.get_JxW_values();
+
+	for (unsigned int q_point = 0; q_point < fe_v.n_quadrature_points; ++q_point) {
+		for (unsigned int i = 0; i < dofs_per_cell; ++i) {
+			const unsigned int component = fe_v.get_fe().system_to_component_index(i).first;
+
+			cell_vector(i) += rhs_values[q_point](component) * fe_v.shape_value(i, q_point) * weights[q_point];
+		}
+	}
+}
+
 //Parallel
 
 void mass_cell_worker_H(
@@ -512,6 +529,28 @@ void stab_cell_worker(
 	  }
 	}
   }
+}
+
+void rhs_cell_worker(
+	const dealii::DoFHandler<2>::active_cell_iterator &cell,
+	RhsScratchDataTE &scratch_data,
+	RhsCopyDataTE &copy_data) {
+
+	scratch_data.fe_values.reinit(cell);
+	const dealii::FEValues<2> &fe_v = scratch_data.fe_values;
+
+	auto dofs_per_cell = fe_v.dofs_per_cell;
+
+	const unsigned int n_q_points = fe_v.n_quadrature_points;
+	const unsigned int n_components_fe = fe_v.get_fe().n_components();
+	std::vector<dealii::Vector<double>> rhs_values(
+		n_q_points, dealii::Vector<double>(n_components_fe));
+
+	scratch_data.rhs_function.vector_value_list(fe_v.get_quadrature_points(), rhs_values);
+
+	copy_data.reinit(cell, dofs_per_cell);
+
+	assemble_rhs_vector_cell(copy_data.cell_vector, rhs_values, fe_v, dofs_per_cell);
 }
 
 }// namespace MaxwellProblem::Assembling

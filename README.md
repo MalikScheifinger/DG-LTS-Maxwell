@@ -31,7 +31,7 @@ provided by Julian Dörner.
 
 ## Reproduction
 
-### Experiment 1 (Figure 2):
+### Experiment 1 (Figure 2 left):
 
 The experiment is build with the commands
 ```bash
@@ -51,7 +51,29 @@ The experiment outputs a convergence table into the terminal and further produce
 
 The plot can be generated within the jupyter notebook `python/TE/plots.ipynb`.
 
-### Experiment 2:
+### Experiment 2 (Figure 2 right):
+
+The experiment is build with the commands
+```bash
+
+    mkdir build
+    cd build
+    cmake -DCMAKE_BUILD_TYPE=Release ..
+    cd TE-example/convergence/
+    make convg_space_time_cavity_TE
+```
+
+The experiment is executed with the command
+```bash
+    ./convg_space_time_cavity_TE
+```
+Note that this can take some time and memory.
+
+The experiment outputs a convergence table into the terminal and further produces a tabular file `errors_space_time_cavity_LTS_LFC_eta1_dg2_localref2_threshold1,2.txt` with the results.
+
+The plot can be generated within the jupyter notebook `python/TE/plots.ipynb`.
+
+### Experiment 3:
 
 The experiment is build with the commands
 ```bash
@@ -69,7 +91,7 @@ The experiment is executed with the command
 ```
 The experiment prints tabulars into the terminal listing the cpu- and wall-times of the different methods.
 
-### Experiment 3 (Figure 3):
+### Experiment 4 (Figure 3):
 
 The experiment is build with the commands
 ```bash

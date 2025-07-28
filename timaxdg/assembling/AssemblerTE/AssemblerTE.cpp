@@ -847,4 +847,29 @@ void AssemblerTE::assemble_rhs(
   }
 }
 
+void AssemblerTE::assemble_rhs_parallel(
+	const dealii::Function<2> &rhs_function,
+	dealii::BlockVector<double> &rhs_vector) {
+	// reset rhs vector
+	rhs_vector = 0;
+
+	RhsScratchDataTE rhs_scratch_data(mapping, fe, quadrature, rhs_function);
+	RhsCopyDataTE rhs_copy_data;
+
+	const auto copier = [&](const RhsCopyDataTE &rhs_copy_data) {
+		rhs_vector.add(
+			rhs_copy_data.local_dof_indices,
+			rhs_copy_data.cell_vector);
+	};
+
+	dealii::MeshWorker::mesh_loop(
+		dof_handler.begin_active(),
+		dof_handler.end(),
+		rhs_cell_worker,
+		copier,
+		rhs_scratch_data,
+		rhs_copy_data,
+		dealii::MeshWorker::assemble_own_cells);
+}
+
 }// namespace MaxwellProblem::Assembling

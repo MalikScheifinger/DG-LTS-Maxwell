@@ -45,41 +45,38 @@
 #include "OutputMatrix.h"
 
 // Setup
-#define GEOMETRY_X 4
-#define GEOMETRY_Y 4
-
-#define START_TIME 0.0
-#define END_TIME 1.0
-
-#define MU 1.0
-#define EPS 1.0
-
-#define FE_DEGREE 2
-#define GLOBAL_REFINEMENTS 7
-#define INNER_REFINEMENTS 2 // must be at least 1 for LI/LTS
-#define GLOBAL_LOCAL_THRESHOLD 1.0
-
-#define LFC_DEGREE 4
-#define ETA 0.5
-
-#define TIME_STEP_WIDTH_LEAPFROG 0.00068
-#define TIME_STEP_WIDTH_LTS_LI 0.0022
+namespace Config {
+  constexpr double geometry_x{4};
+  constexpr double geometry_y{4};
+  constexpr double start_time{0.0};
+  constexpr double end_time{1.0};
+  constexpr double mu{1.0};
+  constexpr double eps{1.0};
+  constexpr unsigned int fe_degree{2};
+  constexpr unsigned int global_refinements{7};
+  constexpr double global_local_threshold{1.0};
+  constexpr double eta{0.5};
+  constexpr double time_step_width_lts_li = 0.0022;
+  constexpr std::array<double, 3> time_step_width_leapfrog{{0.00068, 0.00034, 0.00017}};
+  constexpr std::array<unsigned int, 3> inner_refinement_levels{{2, 3, 4}}; // must be at least 1 for LI/LTS
+  constexpr std::array<unsigned int, 3> lfc_degrees{{4, 7, 14}};
+}
 
 // #define OUTPUT_MATRICES
 
 class comp_LTS_LI_TE {
  private:
-  const double a_x = GEOMETRY_X;
-  const double a_y = GEOMETRY_Y;
+  const double a_x = Config::geometry_x;
+  const double a_y = Config::geometry_y;
 
-  const double global_local_threshold = GLOBAL_LOCAL_THRESHOLD;
+  const double global_local_threshold = Config::global_local_threshold;
 
-  const double start_time = START_TIME;
-  const double end_time = END_TIME;
+  const double start_time = Config::start_time;
+  const double end_time = Config::end_time;
 
-  const unsigned int degree = FE_DEGREE;
+  const unsigned int degree = Config::fe_degree;
   
-  const double eta = ETA;
+  const double eta = Config::eta;
 
   const std::string integrator_str;
   const double radius;
@@ -123,7 +120,7 @@ class comp_LTS_LI_TE {
   void assemble_system();
   void output_matrices(const unsigned int global_ref, const unsigned int local_ref);
   void ti_leapfrog(const double time_step_width);
-  void ti_lts(const double time_step_width);
+  void ti_lts(const double time_step_width, const unsigned int lfc_degree);
   void ti_li(const double time_step_width);
 
  public:
@@ -144,7 +141,7 @@ void comp_LTS_LI_TE::output_matrices(const unsigned int global_ref, const unsign
   std::filesystem::create_directories(out_path);
 
   std::stringstream ss;
-  ss << "_dg" << FE_DEGREE << "_globalref" << global_ref << "_localref" << local_ref << ".dat";
+  ss << "_dg" << Config::fe_degree << "_globalref" << global_ref << "_localref" << local_ref << "_radius" << radius << ".dat";
   std::string data_str = ss.str();
 
   // mass matrix
@@ -223,8 +220,8 @@ comp_LTS_LI_TE::comp_LTS_LI_TE(
                 dealii::FESystem<2>(FE_DGQ<2>(degree), 2), 1),
               cell_quadrature(degree + 2),
               face_quadrature(degree + 1),
-              mu(MU),
-              eps(EPS),
+              mu(Config::mu),
+              eps(Config::eps),
               assembler(
                 fe,
                 mapping,
@@ -233,9 +230,9 @@ comp_LTS_LI_TE::comp_LTS_LI_TE(
                 dof_handler,
                 mu,
                 eps),
-              ex_solution(MU, EPS, start_time),
-              rhs(MU, EPS, start_time),
-              computing_timer(std::cout, TimerOutput::never, TimerOutput::cpu_and_wall_times_grouped) {}
+              ex_solution(Config::mu, Config::eps, start_time),
+              rhs(Config::mu, Config::eps, start_time),
+              computing_timer(out, TimerOutput::never, TimerOutput::cpu_and_wall_times_grouped) {}
 
 void comp_LTS_LI_TE::setup_triangulation(const unsigned int global_refinements, const unsigned int inner_refinements) {
   TimerOutput::Scope timer_section(computing_timer, "Setup triangulation");
@@ -271,6 +268,7 @@ void comp_LTS_LI_TE::setup_triangulation(const unsigned int global_refinements, 
 }
 
 void comp_LTS_LI_TE::setup_system() {
+  std::cout << "Setting up system.\n";
 
   TimerOutput::Scope timer_section(computing_timer, "Setup system");
 
@@ -323,6 +321,7 @@ void comp_LTS_LI_TE::setup_system() {
 }
 
 void comp_LTS_LI_TE::assemble_system() {
+  std::cout << "Assembling system.\n";
 
   TimerOutput::Scope timer_section(computing_timer, "Assemble system");
 
@@ -337,8 +336,10 @@ void comp_LTS_LI_TE::ti_leapfrog(const double time_step_width) {
   double current_time = start_time;
   unsigned int current_time_step = 0;
 
+  std::cout << "Starting leapfrog time-integration.\n";
+
   out.precision(4);
-  out << "Time Integration:" << std::endl;
+  out << "Time Integration:" << "\n";
   out << "  with time step size: " << time_step_width << "\n";
   out << "  total time steps: " << total_time_steps << "\n";
   out << '\n';
@@ -363,9 +364,6 @@ void comp_LTS_LI_TE::ti_leapfrog(const double time_step_width) {
     inv_mass.vmult(solution, tmp_iv_solution);
   }
 
-  std::vector<double> L2_errors;
-  L2_errors.push_back(compute_error_L2(current_time));
-
   while (current_time_step < total_time_steps) {
     current_time += time_step_width;
     current_time_step += 1;
@@ -380,30 +378,19 @@ void comp_LTS_LI_TE::ti_leapfrog(const double time_step_width) {
       TimerOutput::Scope timer_section(computing_timer, "Time integration LF");
       integrator.integrate_step(solution.block(0), solution.block(1), j_current.block(1));
     }
-    double L2_error = 0.0;
-
-    try {
-      L2_error = compute_error_L2(current_time);
-    } catch (dealii::ExcNumberNotFinite const&) {
-      L2_error = 100;
-      out << "  Unstable at time t=" << current_time << "\n\n";
-    }
-    
-    L2_errors.push_back(L2_error);
   }
-  double max_L2_error = *std::max_element(L2_errors.begin(), L2_errors.end());
+  double L2_error = compute_error_L2(current_time);
 
-  // cut-off unstable values
-  if (max_L2_error > 100) max_L2_error = 100;
-
-  out << "  Max L2 Error: " << max_L2_error << "\n";
+  out << "  L2 Error of last step: " << L2_error << "\n";
   out << "\n";
 }
 
-void comp_LTS_LI_TE::ti_lts(const double time_step_width) {
+void comp_LTS_LI_TE::ti_lts(const double time_step_width, const unsigned int lfc_degree) {
   const unsigned int total_time_steps = (end_time - start_time) / time_step_width;
   double current_time = start_time;
   unsigned int current_time_step = 0;
+
+  std::cout << "Starting lfc-lts time-integration.\n";
 
   out.precision(4);
   out << "Time Integration:" << std::endl;
@@ -418,7 +405,7 @@ void comp_LTS_LI_TE::ti_lts(const double time_step_width) {
       inv_mass,
       curl,
       time_step_width,
-      LFC_DEGREE,
+      lfc_degree,
       eta);
 
   // initialize H_0, E_0
@@ -431,9 +418,6 @@ void comp_LTS_LI_TE::ti_lts(const double time_step_width) {
     assembler.assemble_rhs(ex_solution, tmp_iv_solution);
     inv_mass.vmult(solution, tmp_iv_solution);
   }
-
-  std::vector<double> L2_errors;
-  L2_errors.push_back(compute_error_L2(current_time));
 
   while (current_time_step < total_time_steps) {
     current_time += time_step_width;
@@ -450,23 +434,10 @@ void comp_LTS_LI_TE::ti_lts(const double time_step_width) {
       TimerOutput::Scope timer_section(computing_timer, "Time integration LTS");
       integrator.integrate_step(solution, j_current);
     }
-    double L2_error = 0.0;
-
-    try {
-      L2_error = compute_error_L2(current_time);
-    } catch (dealii::ExcNumberNotFinite const&) {
-      L2_error = 100;
-      out << "  Unstable at time t=" << current_time << "\n\n";
-    }
-    
-    L2_errors.push_back(L2_error);
   }
-  double max_L2_error = *std::max_element(L2_errors.begin(), L2_errors.end());
+  double L2_error = compute_error_L2(current_time);
 
-  // cut-off unstable values
-  if (max_L2_error > 100) max_L2_error = 100;
-
-  out << "  Max L2 Error: " << max_L2_error << "\n";
+  out << "  L2 Error of last step: " << L2_error << "\n";
   out << "\n";
 }
 
@@ -474,6 +445,8 @@ void comp_LTS_LI_TE::ti_li(const double time_step_width) {
   const unsigned int total_time_steps = (end_time - start_time) / time_step_width;
   double current_time = start_time;
   unsigned int current_time_step = 0;
+
+  std::cout << "Starting locally implicit time-integration.\n";
 
   out.precision(4);
   out << "Time Integration:" << std::endl;
@@ -502,9 +475,6 @@ void comp_LTS_LI_TE::ti_li(const double time_step_width) {
     inv_mass.vmult(solution, tmp_iv_solution);
   }
 
-  std::vector<double> L2_errors;
-  L2_errors.push_back(compute_error_L2(current_time));
-
   dealii::BlockVector<double> j_current_E; 
   j_current_E.reinit(
     {solution.block(4).size(), 
@@ -530,72 +500,77 @@ void comp_LTS_LI_TE::ti_li(const double time_step_width) {
       TimerOutput::Scope timer_section(computing_timer, "Time integration LI");
       integrator.integrate_step(solution, j_current_E);
     }
-    double L2_error = 0.0;
-
-    try {
-      L2_error = compute_error_L2(current_time);
-    } catch (dealii::ExcNumberNotFinite const&) {
-      L2_error = 100;
-      out << "  Unstable at time t=" << current_time << "\n\n";
-    }
-    
-    L2_errors.push_back(L2_error);
   }
-  double max_L2_error = *std::max_element(L2_errors.begin(), L2_errors.end());
+  double L2_error = compute_error_L2(current_time);
 
-  // cut-off unstable values
-  if (max_L2_error > 100) max_L2_error = 100;
-
-  out << "  Max L2 Error: " << max_L2_error << "\n";
+  out << "  L2 Error of last step: " << L2_error << "\n";
   out << "\n";
 }
 
 void comp_LTS_LI_TE::run() {
+
+  for (unsigned int k = 0; k < Config::inner_refinement_levels.size(); ++k) {
     computing_timer.reset();
 
-    out << "Integrator: " << integrator_str << "\n\n";
+    out << "Integrator: " << integrator_str << "\n"
+        << "radius: " << radius << "\n"
+        << "global refinements: " << Config::global_refinements << "\n" 
+        << "local refinements: " << Config::inner_refinement_levels[k] << "\n\n";
     
-    setup_triangulation(GLOBAL_REFINEMENTS, INNER_REFINEMENTS);
+    setup_triangulation(Config::global_refinements, Config::inner_refinement_levels[k]);
     setup_system();
     assemble_system();
 
     #ifdef OUTPUT_MATRICES
-    output_matrices(GLOBAL_REFINEMENTS, INNER_REFINEMENTS);
+    output_matrices(Config::global_refinements, Config::inner_refinement_levels[k]);
     #endif
     
     if(integrator_str == "leapfrog") {
-      ti_leapfrog(TIME_STEP_WIDTH_LEAPFROG);
+      ti_leapfrog(Config::time_step_width_leapfrog[k]);
     } else if(integrator_str == "lts_lfc") {
-      ti_lts(TIME_STEP_WIDTH_LTS_LI);
+      ti_lts(Config::time_step_width_lts_li, Config::lfc_degrees[k]);
     } else if(integrator_str == "li") {
-      ti_li(TIME_STEP_WIDTH_LTS_LI);
+      ti_li(Config::time_step_width_lts_li);
     } else {
       throw dealii::ExcMessage("No valid time-integrator. Choose 'leapfrog', 'lts_lfc' or 'li'.");
     }
 
     computing_timer.print_summary();
-    std::cout << std::endl;
+    out << std::endl;
+  }
 }
 
 int main() {
   try {
+    const std::filesystem::path path = std::filesystem::current_path();
+    const std::filesystem::path out_path = path / "results";
+    std::filesystem::create_directories(out_path);
+
+    auto out_file_path = out_path / "output_comparision_LTS_LI.txt";
+
+    std::cout << "Results will be written to\t" << out_file_path << "\n\n";
+
+    std::ofstream out_file(out_file_path);
+
     {
-    comp_LTS_LI_TE te_leapfrog("leapfrog", 0.5);
+    comp_LTS_LI_TE te_leapfrog("leapfrog", 0.1, path, out_file);
     te_leapfrog.run();
-    comp_LTS_LI_TE te_lts_lfc("lts_lfc", 0.5);
+    comp_LTS_LI_TE te_lts_lfc("lts_lfc", 0.1, path, out_file);
     te_lts_lfc.run();
-    comp_LTS_LI_TE te_li("li", 0.5);
+    comp_LTS_LI_TE te_li("li", 0.1, path, out_file);
     te_li.run();
     }
 
     {
-    comp_LTS_LI_TE te_leapfrog("leapfrog", 0.1);
+    comp_LTS_LI_TE te_leapfrog("leapfrog", 0.5, path, out_file);
     te_leapfrog.run();
-    comp_LTS_LI_TE te_lts_lfc("lts_lfc", 0.1);
+    comp_LTS_LI_TE te_lts_lfc("lts_lfc", 0.5, path, out_file);
     te_lts_lfc.run();
-    comp_LTS_LI_TE te_li("li", 0.1);
+    comp_LTS_LI_TE te_li("li", 0.5, path, out_file);
     te_li.run();
     }
+
+    std::cout << "Results can be found in\t" << out_file_path << "\n\n";
 
   } catch (std::exception &exc) {
       std::cerr << std::endl
